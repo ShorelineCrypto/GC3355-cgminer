@@ -1,0 +1,31 @@
+#!/bin/bash
+echo "Save As:"
+read varsave
+echo \
+
+echo "Pool URL:"
+read varlink
+echo \
+
+echo "Pool Worker:"
+read varworker
+echo \
+
+echo "Worker Password:"
+read varpass
+echo \
+
+echo "Orb Frequency:"
+echo "Can be 600, 625, 650, 675, 700, 725, 750, 775, 800, 825, 850, 875, 900"
+echo "**Recommended Frequency is 850**"
+read varfreq
+echo \
+
+
+> $varsave
+
+echo "#!/bin/bash" >> $varsave
+echo "cd cgminer" >> $varsave
+echo "sudo ./cgminer -o $varlink -u $varworker -p $varpass --gridseed-options=baud=115200,freq=$varfreq,chips=5,usefifo=0,btc=16 --hotplug 0" >> $varsave
+
+chmod +x $varsave

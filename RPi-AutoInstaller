@@ -1,0 +1,18 @@
+#!/bin/bash
+
+echo "Updating And Installing Dependencies"
+echo \
+
+sudo apt-get update
+sudo apt-get upgrade
+sudo apt-get install build-essential autoconf automake libtool pkg-config libcurl4-gnutls-dev libjansson-dev uthash-dev libncurses5-dev libudev-dev libusb-1.0-0-dev libevent-dev
+
+echo "Configuring And Installing cgminer"
+echo \
+
+cd cgminer
+sudo ./configure CFLAGS="-O3" --enable-scrypt --enable-gridseed
+sudo make
+
+echo \
+echo "Done!"
