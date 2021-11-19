@@ -1,6 +1,6 @@
 /*
  * Copyright 2012-2013 Andrew Smith
- * Copyright 2013 Con Kolivas <kernel@kolivas.org>
+ * Copyright 2013-2014 Con Kolivas <kernel@kolivas.org>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -70,6 +70,11 @@
 // LLT = BLT (same code)
 #define FTDI_VALUE_DATA_BLT 8
 
+// ZUS = AVA or LLT
+#define FTDI_VALUE_BAUD_ZUS 0x001a
+#define FTDI_INDEX_BAUD_ZUS 0x0000
+#define FTDI_VALUE_DATA_ZUS 8
+
 #define FTDI_VALUE_FLOW 0
 #define FTDI_VALUE_MODEM 0x0303
 
@@ -134,29 +139,39 @@ struct usb_intinfo {
 
 enum sub_ident {
 	IDENT_UNK = 0,
+	IDENT_AMU,
+	IDENT_ANT,
+	IDENT_ANU,
+	IDENT_AS2,
+	IDENT_AVA,
 	IDENT_BAJ,
 	IDENT_BAL,
-	IDENT_BAS,
 	IDENT_BAM,
-	IDENT_BFL,
-	IDENT_BFU,
-	IDENT_MMQ,
-	IDENT_AVA,
-	IDENT_BTB,
-	IDENT_HFA,
+	IDENT_BAS,
 	IDENT_BBF,
+	IDENT_BF1,
+	IDENT_BFL,
+	IDENT_BLT,
+	IDENT_BTB,
+	IDENT_BXF,
+	IDENT_BXM,
+	IDENT_CMR1,
+	IDENT_CMR2,
+	IDENT_CTA,
+	IDENT_DRB,
+	IDENT_HFA,
+	IDENT_ICA,
 	IDENT_KLN,
+	IDENT_LLT,
+	IDENT_MMQ,
+	IDENT_NFU,
+	IDENT_OSM,
 	IDENT_GSD,
 	IDENT_GSD1,
 	IDENT_GSD2,
 	IDENT_GSD3,
-	IDENT_ICA,
-	IDENT_AMU,
-	IDENT_BLT,
-	IDENT_LLT,
-	IDENT_CMR1,
-	IDENT_CMR2,
-	IDENT_ZTX
+	IDENT_ZUS1,
+	IDENT_ZUS2
 };
 
 struct usb_find_devices {
@@ -179,6 +194,8 @@ struct usb_find_devices {
  * baud rate, to avoid status bytes being interleaved in larger transfers. */
 #define LATENCY_UNUSED 0
 #define LATENCY_STD 32
+#define LATENCY_ANTS1 10
+#define LATENCY_ANTS2 10
 
 enum usb_types {
 	USB_TYPE_STD = 0,
@@ -186,6 +203,12 @@ enum usb_types {
 };
 
 #define USB_MAX_READ 8192
+/*
+ * We add 4: 1 for null, 2 for FTDI status and 1 to round to 4 bytes
+ * If a single device ever has multiple end points then it will need
+ * multiple of these
+ */
+#define USB_READ_BUFSIZE (USB_MAX_READ + 4)
 
 struct cg_usb_device {
 	struct usb_find_devices *found;
@@ -195,8 +218,6 @@ struct cg_usb_device {
 	enum usb_types usb_type;
 	enum sub_ident ident;
 	uint16_t usbver;
-	int cps;
-	bool usecps;
 	char *prod_string;
 	char *manuf_string;
 	char *serial_string;
@@ -205,6 +226,8 @@ struct cg_usb_device {
 	char buffer[USB_MAX_READ];
 	uint32_t bufsiz;
 	uint32_t bufamt;
+	bool usb11; // USB 1.1 flag for convenience
+	bool tt; // Enable the transaction translator
 };
 
 #define USB_NOSTAT 0
@@ -227,6 +250,7 @@ struct cg_usb_info {
 	uint8_t device_address;
 	int usbstat;
 	bool nodev;
+	bool initialised;
 	int nodev_count;
 	struct timeval last_nodev;
 	uint32_t ioerr_count;
@@ -253,13 +277,6 @@ struct cg_usb_info {
 	double total_read_delay;
 	uint64_t write_delay_count;
 	double total_write_delay;
-
-	/*
-	 * We add 4: 1 for null, 2 for FTDI status and 1 to round to 4 bytes
-	 * If a single device ever has multiple end points then it will need
-	 * multiple of these
-	 */
-	unsigned char bulkbuf[USB_MAX_READ+4];
 
 	uint64_t tmo_count;
 	struct cg_usb_tmo usb_tmo[USB_TMOS];
@@ -330,8 +347,28 @@ struct cg_usb_info {
 	USB_ADD_COMMAND(C_GET_AVALON_RESET, "GetAvalonReset") \
 	USB_ADD_COMMAND(C_FTDI_STATUS, "FTDIStatus") \
 	USB_ADD_COMMAND(C_ENABLE_UART, "EnableUART") \
+	USB_ADD_COMMAND(C_ANU_SEND_CMD, "ANUSendcmd") \
+	USB_ADD_COMMAND(C_ANU_SEND_RDREG, "ANUSendrdreg") \
 	USB_ADD_COMMAND(C_BB_SET_VOLTAGE, "SetCoreVoltage") \
 	USB_ADD_COMMAND(C_BB_GET_VOLTAGE, "GetCoreVoltage") \
+	USB_ADD_COMMAND(C_BF_RESET, "BFReset") \
+	USB_ADD_COMMAND(C_BF_OPEN, "BFOpen") \
+	USB_ADD_COMMAND(C_BF_INIT, "BFInit") \
+	USB_ADD_COMMAND(C_BF_CLOSE, "BFClose") \
+	USB_ADD_COMMAND(C_BF_REQINFO, "BFRequestInfo") \
+	USB_ADD_COMMAND(C_BF_GETINFO, "BFGetInfo") \
+	USB_ADD_COMMAND(C_BF_REQRESET, "BFRequestReset") \
+	USB_ADD_COMMAND(C_BF_GETRESET, "BFGetReset") \
+	USB_ADD_COMMAND(C_BF_REQWORK, "BFRequestWork") \
+	USB_ADD_COMMAND(C_BF_GETWORK, "BFGetWork") \
+	USB_ADD_COMMAND(C_BF_GETRES, "BFGetResults") \
+	USB_ADD_COMMAND(C_BF_FLUSH, "BFFlush") \
+	USB_ADD_COMMAND(C_BF_IFLUSH, "BFInterruptFlush") \
+	USB_ADD_COMMAND(C_BF_IDENTIFY, "BFIdentify") \
+	USB_ADD_COMMAND(C_BF_DETECTCHIPS, "BFDetectChips") \
+	USB_ADD_COMMAND(C_BF_CONFIG, "BFConfig") \
+	USB_ADD_COMMAND(C_BF_GETTEMP, "BFGetTemp") \
+	USB_ADD_COMMAND(C_BF_AUTOTUNE, "BFAutoTune") \
 	USB_ADD_COMMAND(C_ATMEL_RESET, "AtmelReset") \
 	USB_ADD_COMMAND(C_ATMEL_OPEN, "AtmelOpen") \
 	USB_ADD_COMMAND(C_ATMEL_INIT, "AtmelInit") \
@@ -346,6 +383,32 @@ struct cg_usb_info {
 	USB_ADD_COMMAND(C_BF1_FLUSH, "BF1Flush") \
 	USB_ADD_COMMAND(C_BF1_IFLUSH, "BF1InterruptFlush") \
 	USB_ADD_COMMAND(C_BF1_IDENTIFY, "BF1Identify") \
+	USB_ADD_COMMAND(C_BXF_READ, "BXFRead") \
+	USB_ADD_COMMAND(C_BXF_WORK, "BXFWork") \
+	USB_ADD_COMMAND(C_BXF_TARGET, "BXFTarget") \
+	USB_ADD_COMMAND(C_BXF_VERSION, "BXFVersion") \
+	USB_ADD_COMMAND(C_BXF_MAXROLL, "BXFMaxRoll") \
+	USB_ADD_COMMAND(C_BXF_FLUSH, "BXFFlush") \
+	USB_ADD_COMMAND(C_BXF_CLOCK, "BXFClock") \
+	USB_ADD_COMMAND(C_BXF_LEDMODE, "BXFLedMode") \
+	USB_ADD_COMMAND(C_BXF_DEBUGMODE, "BXFDebugMode") \
+	USB_ADD_COMMAND(C_BXM_FLUSH, "BXMFlush") \
+	USB_ADD_COMMAND(C_BXM_SRESET, "BXMSReset") \
+	USB_ADD_COMMAND(C_BXM_SETLATENCY, "BXMSetLatency") \
+	USB_ADD_COMMAND(C_BXM_SECR, "BXMSetEventCharRequest") \
+	USB_ADD_COMMAND(C_BXM_SETBITMODE, "BXMSetBitmodeRequest") \
+	USB_ADD_COMMAND(C_BXM_CLOCK, "BXMClock") \
+	USB_ADD_COMMAND(C_BXM_CLOCKDIV, "BXMClockDiv") \
+	USB_ADD_COMMAND(C_BXM_LOOP, "BXMLoop") \
+	USB_ADD_COMMAND(C_BXM_ADBUS, "BXMADBus") \
+	USB_ADD_COMMAND(C_BXM_ACBUS, "BXMACBus") \
+	USB_ADD_COMMAND(C_BXM_PURGERX, "BXMPurgeRX") \
+	USB_ADD_COMMAND(C_BXM_PURGETX, "BXMPurgeTX") \
+	USB_ADD_COMMAND(C_BXM_CSLOW, "BXMCSLow") \
+	USB_ADD_COMMAND(C_BXM_CSHIGH, "BXMCSHigh") \
+	USB_ADD_COMMAND(C_BXM_RESET, "BXMReset") \
+	USB_ADD_COMMAND(C_BXM_SPITX, "BXMSPITX") \
+	USB_ADD_COMMAND(C_BXM_SPIRX, "BXMSPIRX") \
 	USB_ADD_COMMAND(C_HF_RESET, "HFReset") \
 	USB_ADD_COMMAND(C_HF_PLL_CONFIG, "HFPLLConfig") \
 	USB_ADD_COMMAND(C_HF_ADDRESS, "HFAddress") \
@@ -358,13 +421,37 @@ struct cg_usb_info {
 	USB_ADD_COMMAND(C_HF_STATISTICS, "HFStatistics") \
 	USB_ADD_COMMAND(C_HF_CLOCKGATE, "HFClockGate") \
 	USB_ADD_COMMAND(C_HF_USB_INIT, "HFUSBInit") \
+	USB_ADD_COMMAND(C_HF_DFU, "HFDFU") \
 	USB_ADD_COMMAND(C_HF_DIE_STATUS, "HFDieStatus") \
 	USB_ADD_COMMAND(C_HF_GWQ_STATUS, "HFGWQStatus") \
 	USB_ADD_COMMAND(C_HF_WORK_RESTART, "HFWorkRestart") \
 	USB_ADD_COMMAND(C_HF_GWQSTATS, "HFGWQStats") \
+	USB_ADD_COMMAND(C_HF_NOTICE, "HFNotice") \
+	USB_ADD_COMMAND(C_HF_PING, "HFPing") \
+	USB_ADD_COMMAND(C_HF_FAN, "HFFan") \
+	USB_ADD_COMMAND(C_OP_NAME, "HFName") \
 	USB_ADD_COMMAND(C_HF_GETHEADER, "HFGetHeader") \
 	USB_ADD_COMMAND(C_HF_GETDATA, "HFGetData") \
-	USB_ADD_COMMAND(C_HF_CLEAR_READ, "HFClearRead")
+	USB_ADD_COMMAND(C_HF_CLEAR_READ, "HFClearRead") \
+	USB_ADD_COMMAND(C_CTA_READ, "CTARead") \
+	USB_ADD_COMMAND(C_CTA_WRITE, "CTAWrite") \
+	USB_ADD_COMMAND(C_MCP_GETGPIOSETTING, "MCPGetGPIOSetting") \
+	USB_ADD_COMMAND(C_MCP_SETGPIOSETTING, "MCPSetGPIOSetting") \
+	USB_ADD_COMMAND(C_MCP_GETGPIOPINVAL, "MCPGetGPIOPinVal") \
+	USB_ADD_COMMAND(C_MCP_SETGPIOPINVAL, "MCPSetGPIOPinVal") \
+	USB_ADD_COMMAND(C_MCP_GETGPIOPINDIR, "MCPGetGPIOPinDir") \
+	USB_ADD_COMMAND(C_MCP_SETGPIOPINDIR, "MCPSetGPIOPinDir") \
+	USB_ADD_COMMAND(C_MCP_SETSPISETTING, "MCPSetSPISetting") \
+	USB_ADD_COMMAND(C_MCP_GETSPISETTING, "MCPGetSPISetting") \
+	USB_ADD_COMMAND(C_MCP_SPITRANSFER, "MCPSPITransfer") \
+	USB_ADD_COMMAND(C_MCP_SPICANCEL, "MCPSPICancel") \
+	USB_ADD_COMMAND(C_BITMAIN_SEND, "BitmainSend") \
+	USB_ADD_COMMAND(C_BITMAIN_READ, "BitmainRead") \
+	USB_ADD_COMMAND(C_BITMAIN_TOKEN_TXCONFIG, "BitmainTokenTxConfig") \
+	USB_ADD_COMMAND(C_BITMAIN_TOKEN_TXTASK, "BitmainTokenTxTask") \
+	USB_ADD_COMMAND(C_BITMAIN_TOKEN_RXSTATUS, "BitmainTokenRxStatus") \
+	USB_ADD_COMMAND(C_BITMAIN_DATA_RXSTATUS, "BitmainDataRxStatus") \
+	USB_ADD_COMMAND(C_BITMAIN_DATA_RXNONCE, "BitmainDataRxNonce")
 
 /* Create usb_cmds enum from USB_PARSE_COMMANDS macro */
 enum usb_cmds {
@@ -378,17 +465,24 @@ struct cgpu_info;
 bool async_usb_transfers(void);
 void cancel_usb_transfers(void);
 void usb_all(int level);
+void usb_list(void);
 const char *usb_cmdname(enum usb_cmds cmd);
 void usb_applog(struct cgpu_info *cgpu, enum usb_cmds cmd, char *msg, int amount, int err);
+void blacklist_cgpu(struct cgpu_info *cgpu);
+void whitelist_cgpu(struct cgpu_info *cgpu);
 void usb_nodev(struct cgpu_info *cgpu);
 struct cgpu_info *usb_copy_cgpu(struct cgpu_info *orig);
 struct cgpu_info *usb_alloc_cgpu(struct device_drv *drv, int threads);
 struct cgpu_info *usb_free_cgpu(struct cgpu_info *cgpu);
 void usb_uninit(struct cgpu_info *cgpu);
 bool usb_init(struct cgpu_info *cgpu, struct libusb_device *dev, struct usb_find_devices *found);
-void usb_detect(struct device_drv *drv, bool (*device_detect)(struct libusb_device *, struct usb_find_devices *));
+void __usb_detect(struct device_drv *drv, struct cgpu_info *(*device_detect)(struct libusb_device *, struct usb_find_devices *),
+		  bool single);
+#define usb_detect(drv, cgpu) __usb_detect(drv, cgpu, false)
+#define usb_detect_one(drv, cgpu) __usb_detect(drv, cgpu, true)
 struct api_data *api_usb_stats(int *count);
 void update_usb_stats(struct cgpu_info *cgpu);
+void usb_reset(struct cgpu_info *cgpu);
 int _usb_read(struct cgpu_info *cgpu, int intinfo, int epinfo, char *buf, size_t bufsiz, int *processed, int timeout, const char *end, enum usb_cmds cmd, bool readonce, bool cancellable);
 int _usb_write(struct cgpu_info *cgpu, int intinfo, int epinfo, char *buf, size_t bufsiz, int *processed, int timeout, enum usb_cmds);
 int _usb_transfer(struct cgpu_info *cgpu, uint8_t request_type, uint8_t bRequest, uint16_t wValue, uint16_t wIndex, uint32_t *data, int siz, unsigned int timeout, enum usb_cmds cmd);
@@ -398,9 +492,6 @@ int _usb_ftdi_set_latency(struct cgpu_info *cgpu, int intinfo);
 #define usb_ftdi_set_latency(_cgpu) _usb_ftdi_set_latency(_cgpu, DEFAULT_INTINFO)
 void usb_buffer_clear(struct cgpu_info *cgpu);
 uint32_t usb_buffer_size(struct cgpu_info *cgpu);
-void usb_set_cps(struct cgpu_info *cgpu, int cps);
-void usb_enable_cps(struct cgpu_info *cgpu);
-void usb_disable_cps(struct cgpu_info *cgpu);
 int _usb_interface(struct cgpu_info *cgpu, int intinfo);
 #define usb_interface(_cgpu) _usb_interface(_cgpu, DEFAULT_INTINFO)
 enum sub_ident usb_ident(struct cgpu_info *cgpu);
@@ -408,6 +499,7 @@ void usb_set_dev_start(struct cgpu_info *cgpu);
 void usb_cleanup();
 void usb_initialise();
 void *usb_resource_thread(void *userdata);
+void initialise_usblocks(void);
 
 #define usb_read(cgpu, buf, bufsiz, read, cmd) \
 	_usb_read(cgpu, DEFAULT_INTINFO, DEFAULT_EP_IN, buf, bufsiz, read, DEVTIMEOUT, NULL, cmd, false, false)

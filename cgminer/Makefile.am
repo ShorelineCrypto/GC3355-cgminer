@@ -1,40 +1,38 @@
 
 ACLOCAL_AMFLAGS = -I m4
 
-JANSSON_INCLUDES= -I$(top_builddir)/compat/jansson-2.5/src -I$(top_srcdir)/compat/jansson-2.5/src
+JANSSON_CPPFLAGS= -I$(top_builddir)/compat/jansson-2.5/src -I$(top_srcdir)/compat/jansson-2.5/src
 
 if WANT_USBUTILS
-USBUTILS_INCLUDES = -I$(top_builddir)/compat/libusb-1.0/libusb -I$(top_srcdir)/compat/libusb-1.0/libusb
+USBUTILS_CPPFLAGS = -I$(top_builddir)/compat/libusb-1.0/libusb -I$(top_srcdir)/compat/libusb-1.0/libusb
 else
-USBUTILS_INCLUDES =
+USBUTILS_CPPFLAGS =
 endif
 
-EXTRA_DIST	= example.conf m4/gnulib-cache.m4 linux-usb-cgminer \
-		  ADL_SDK/readme.txt api-example.php miner.php	\
+EXTRA_DIST	= example.conf linux-usb-cgminer \
+		  api-example.php miner.php	\
 		  API.class API.java api-example.c windows-build.txt \
-		  bitstreams/* API-README FPGA-README SCRYPT-README \
+		  bitstreams/README API-README FPGA-README \
 		  bitforce-firmware-flash.c hexdump.c ASIC-README \
-		  01-cgminer.rules GPU-README
+		  01-cgminer.rules
 
 SUBDIRS		= lib compat ccan
 
-INCLUDES	= $(PTHREAD_FLAGS) -fno-strict-aliasing $(JANSSON_INCLUDES) $(USBUTILS_INCLUDES)
+cgminer_CPPFLAGS = $(PTHREAD_FLAGS) -fno-strict-aliasing $(JANSSON_CPPFLAGS) $(USBUTILS_CPPFLAGS)
 
 bin_PROGRAMS	= cgminer
 
 cgminer_LDFLAGS	= $(PTHREAD_FLAGS)
 cgminer_LDADD	= $(DLOPEN_FLAGS) @LIBCURL_LIBS@ @JANSSON_LIBS@ @PTHREAD_LIBS@ \
-		  @OPENCL_LIBS@ @NCURSES_LIBS@ @PDCURSES_LIBS@ @WS2_LIBS@ \
-		  @LIBUSB_LIBS@ @MM_LIBS@ @RT_LIBS@ \
+		  @NCURSES_LIBS@ @PDCURSES_LIBS@ @WS2_LIBS@ \
+		  @LIBUSB_LIBS@ @LIBUDEV_LIBS@ @MM_LIBS@ @RT_LIBS@ \
 		  @MATH_LIBS@ lib/libgnu.a ccan/libccan.a
 
-if HAVE_WINDOWS
-cgminer_CPPFLAGS = -I$(top_builddir)/lib -I$(top_srcdir)/lib @OPENCL_FLAGS@
-else
-cgminer_CPPFLAGS = -I$(top_builddir)/lib -I$(top_srcdir)/lib @OPENCL_FLAGS@ @LIBCURL_CFLAGS@
-endif
+cgminer_CPPFLAGS += -I$(top_builddir)/lib -I$(top_srcdir)/lib
 
-cgminer_CPPFLAGS += $(ADL_CPPFLAGS)
+if !HAVE_WINDOWS
+cgminer_CPPFLAGS += @LIBCURL_CFLAGS@
+endif
 
 # common sources
 cgminer_SOURCES := cgminer.c
@@ -45,18 +43,12 @@ cgminer_SOURCES	+= elist.h miner.h compat.h bench_block.h	\
 
 cgminer_SOURCES	+= logging.c
 
+cgminer_SOURCES	+= klist.h klist.c
+
+cgminer_SOURCES	+= noncedup.c
+
 if HAS_SCRYPT
 cgminer_SOURCES += scrypt.c scrypt.h
-endif
-
-if HAS_OPENCL
-bin_SCRIPTS	= $(top_srcdir)/*.cl
-
-cgminer_SOURCES += driver-opencl.h driver-opencl.c
-cgminer_SOURCES += ocl.c ocl.h findnonce.c findnonce.h
-cgminer_SOURCES += adl.c adl.h adl_functions.h
-cgminer_SOURCES += *.cl
-
 endif
 
 if NEED_FPGAUTILS
@@ -65,6 +57,10 @@ endif
 
 if WANT_USBUTILS
 cgminer_SOURCES += usbutils.c usbutils.h
+endif
+
+if WANT_LIBBITFURY
+cgminer_SOURCES += libbitfury.c libbitfury.h mcp2210.c mcp2210.h
 endif
 
 # Device drivers
@@ -85,27 +81,74 @@ cgminer_SOURCES += driver-bitforce.c
 endif
 
 if HAS_HASHFAST
-cgminer_SOURCES += driver-hashfast.c driver-hashfast.h hf_protocol.h
+cgminer_SOURCES += driver-hashfast.c driver-hashfast.h hf_protocol.h hf_protocol_be.h
 endif
 
 if HAS_BITFURY
 cgminer_SOURCES += driver-bitfury.c driver-bitfury.h
 endif
 
-if HAS_GRIDSEED
-cgminer_SOURCES += driver-gridseed.c driver-gridseed.h
+if HAS_BITMINE_A1
+cgminer_SOURCES += driver-SPI-bitmine-A1.c
+cgminer_SOURCES += spi-context.c spi-context.h
+cgminer_SOURCES += A1-common.h
+cgminer_SOURCES += A1-board-selector.h
+cgminer_SOURCES += A1-board-selector-CCD.c A1-board-selector-CCR.c
+cgminer_SOURCES += A1-trimpot-mcp4x.h A1-trimpot-mcp4x.c
+cgminer_SOURCES += i2c-context.c i2c-context.h
+endif
+
+if HAS_DRILLBIT
+cgminer_SOURCES += driver-drillbit.c driver-drillbit.h
 endif
 
 if HAS_ICARUS
-cgminer_SOURCES += driver-icarus.c driver-gridseed.c driver-gridseed.h
+cgminer_SOURCES += driver-icarus.c
 endif
 
 if HAS_KLONDIKE
 cgminer_SOURCES += driver-klondike.c
 endif
 
+if HAS_COINTERRA
+cgminer_SOURCES += driver-cointerra.c driver-cointerra.h
+endif
+
+if HAS_SPONDOOLIES
+cgminer_SOURCES += driver-spondoolies.c driver-spondoolies.h \
+		   mg_proto_parser.c mg_proto_parser.h
+endif
+
+if HAS_BAB
+cgminer_SOURCES += driver-bab.c
+endif
+
+if HAS_AVALON2
+cgminer_SOURCES += driver-avalon2.c driver-avalon2.h crc16.c crc.h
+endif
+
+if HAS_MINION
+cgminer_SOURCES += driver-minion.c
+endif
+
+if HAS_ANT_S1
+cgminer_SOURCES += driver-bitmain.c driver-bitmain.h
+endif
+
+if HAS_ANT_S2
+cgminer_SOURCES += driver-bitmain.c driver-bitmain.h
+endif
+
 if HAS_MODMINER
 cgminer_SOURCES += driver-modminer.c
 bitstreamsdir = $(bindir)/bitstreams
-dist_bitstreams_DATA = $(top_srcdir)/bitstreams/*
+dist_bitstreams_DATA = $(top_srcdir)/bitstreams/README
+endif
+
+if HAS_GRIDSEED
+cgminer_SOURCES += driver-gridseed.c driver-gridseed.h
+endif
+
+if HAS_ZEUS
+cgminer_SOURCES += driver-zeus.c driver-zeus.h
 endif

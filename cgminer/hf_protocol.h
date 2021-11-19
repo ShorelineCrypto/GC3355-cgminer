@@ -1,5 +1,5 @@
 //
-// Copyright 2013 HashFast LLC
+// Copyright 2013, 2014 HashFast Technologies LLC
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License as published by the Free
@@ -8,7 +8,7 @@
 //
 // Useful data structures and values for interfacing with HashFast products
 //
-// Version 1.0
+// Version 1.1
 //
 
 #ifndef _HF_PROTOCOL_H_
@@ -45,6 +45,9 @@
 #define GN_CORE_VOLTAGE(a)              ((float)(a)/256*1.2)
 #define GN_DIE_TEMPERATURE(a)           ((((float)(a)*240)/4096.0)-61.5)
 
+// What to use in an OP_CONFIG hdata field to set thermal overload point to a given temp in degrees C
+#define GN_THERMAL_CUTOFF(temp)         ((uint16_t)(((temp)+61.5)*4096/240))
+
 // The sequence distance between a sent and received sequence number.
 #define HF_SEQUENCE_DISTANCE(tx,rx)        ((tx)>=(rx)?((tx)-(rx)):(info->num_sequence+(tx)-(rx)))
 
@@ -74,6 +77,11 @@
 #define OP_USB_STATS1                   137         // Statistics class 1
 #define OP_USB_GWQSTATS                 138         // GWQ protocol statistics
 #define OP_USB_NOTICE                   139         // Asynchronous notification event
+#define OP_PING                         140         // Echo
+#define OP_CORE_MAP                     141         // Return core map
+#define OP_VERSION                      142         // Version information
+#define OP_FAN                          143         // Set Fan Speed
+#define OP_NAME                         144         // System name write/read
 #define OP_USB_DEBUG                    255
 
 // HashFast vendor and product ID's
@@ -92,13 +100,63 @@
 #define E_CLOCKGATE_TIMEOUT             3
 #define E_CONFIG_TIMEOUT                4
 #define E_EXCESS_CORE_FAILURES          5
+#define E_TOTAL_CORE_FAILURES           6
+#define E_TOO_MANY_GROUPS               7
+#define E_NO_SLAVES                     8
+#define E_SLAVE_COMM                    9
+#define E_MAIN_POWER_BAD                10
+#define E_SECONDARY_POWER_BAD           11
+#define E_BOARD_1                       12
+#define E_BOARD_2                       13
+#define E_BOARD_3                       14
+#define E_BOARD_4                       15
+#define E_BOARD_5                       16
+#define E_CORE_POWER_FAULT              17
+#define E_BAUD_TIMEOUT                  18
+#define E_ADDRESS_FAILURE               19
+#define E_IR_PROG_FAILURE               20
+#define E_MIXED_MISMATCH                21
+#define E_MIXED_TIMEOUT                 22
 
 #define U32SIZE(x)                      (sizeof(x)/sizeof(uint32_t))
 
+// Baud rate vs. code for gpi[7:5] coming out of reset
+#define BAUD_RATE_PWRUP_0           115200
+#define BAUD_RATE_PWRUP_1             9600
+#define BAUD_RATE_PWRUP_2            38400
+#define BAUD_RATE_PWRUP_3            57600
+#define BAUD_RATE_PWRUP_4           230400
+#define BAUD_RATE_PWRUP_5           576000
+#define BAUD_RATE_PWRUP_6           921600
+#define BAUD_RATE_PWRUP_7          1152000
+
+// OP_WORK_RESTART hash clock change methods.
+//
+// May be issued *infrequently* by the host to adjust hash clock rate for thermal control
+// The "hdata" field, if non zero, contains adjustment instructions. Bits 15:12 of "hdata"
+// contain the adjustment type according to the following code, and bits 11:0 contain the
+// associated value. Examples:
+//     hdata = (1<<12)|550 = Set hash clock rate to 550 Mhz
+//     hdata = (4<<12)|1   = Increase hash clock rate by 1%
+//     hdata = (6<<12)     = Go back to whatever the "original" OP_USB_INIT settings were
+//
+// Finally, if 4 bytes of "data" follows the OP_WORK_RESTART header, then that data is taken
+// as a little endian bitmap, bit set = enable clock change to that die, bit clear = don't
+// change clock on that die, i.e. considered as a uint32_t, then 0x1 = die 0, 0x2 = die 1 etc.
+
+#define WR_NO_CHANGE                    0
+#define WR_CLOCK_VALUE                  1
+#define WR_MHZ_INCREASE                 2
+#define WR_MHZ_DECREASE                 3
+#define WR_PERCENT_INCREASE             4
+#define WR_PERCENT_DECREASE             5
+#define WR_REVERT                       6
+
+#define WR_COMMAND_SHIFT                12
 
 // Structure definitions, LE platforms
 
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#if __BYTE_ORDER == __BIG_ENDIAN && !defined(WIN32)
 #include "hf_protocol_be.h"
 #else
 // Generic header
@@ -243,7 +301,7 @@ struct hf_usb_init_header {
 	uint8_t  pll_bypass:1;                  // Force PLL bypass, hash clock = ref clock
 	uint8_t  no_asic_initialization:1;      // Do not perform automatic ASIC initialization
 	uint8_t  do_atspeed_core_tests:1;       // Do core tests at speed, return second bitmap
-	uint8_t  leave_powered_down:1;          // Init USB only, leave device powered down
+	uint8_t  shed_supported:1;              // Host supports gwq status shed_count
 
 	uint16_t hash_clock;                    // Requested hash clock frequency
 

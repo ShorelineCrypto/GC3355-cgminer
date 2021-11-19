@@ -3,6 +3,13 @@ echo "Save As:"
 read varsave
 echo \
 
+echo "Pool Algo:"
+echo "sha256"
+echo "or"
+echo "scrypt"
+read varalgo
+echo \
+
 echo "Pool URL:"
 read varlink
 echo \
@@ -26,6 +33,6 @@ echo \
 
 echo "#!/bin/bash" >> $varsave
 echo "cd cgminer" >> $varsave
-echo "sudo ./cgminer -o $varlink -u $varworker -p $varpass --gridseed-options=baud=115200,freq=$varfreq,chips=5,usefifo=0,btc=16 --hotplug 0" >> $varsave
+echo "sudo ./cgminer --$varalgo -o $varlink -u $varworker -p $varpass --gridseed-options=baud=115200,freq=$varfreq,chips=5,usefifo=0,btc=16 --hotplug 0" >> $varsave
 
 chmod +x $varsave

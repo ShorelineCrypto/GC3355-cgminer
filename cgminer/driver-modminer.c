@@ -109,7 +109,7 @@ static void do_ping(struct cgpu_info *modminer)
 		modminer->drv->name, modminer->fpgaid, amount, err);
 }
 
-static bool modminer_detect_one(struct libusb_device *dev, struct usb_find_devices *found)
+static struct cgpu_info *modminer_detect_one(struct libusb_device *dev, struct usb_find_devices *found)
 {
 	char buf[0x100+1];
 	char *devname = NULL;
@@ -125,9 +125,6 @@ static bool modminer_detect_one(struct libusb_device *dev, struct usb_find_devic
 
 	if (!usb_init(modminer, dev, found))
 		goto shin;
-
-	usb_set_cps(modminer, 11520);
-	usb_enable_cps(modminer);
 
 	do_ping(modminer);
 
@@ -217,7 +214,7 @@ static bool modminer_detect_one(struct libusb_device *dev, struct usb_find_devic
 
 	modminer = usb_free_cgpu(modminer);
 
-	return true;
+	return modminer;
 
 unshin:
 	if (!added)
@@ -232,9 +229,9 @@ shin:
 	modminer = usb_free_cgpu(modminer);
 
 	if (added)
-		return true;
+		return modminer;
 	else
-		return false;
+		return NULL;
 }
 
 static void modminer_detect(bool __maybe_unused hotplug)
@@ -737,7 +734,7 @@ static bool modminer_fpga_init(struct thr_info *thr)
 
 static void get_modminer_statline_before(char *buf, size_t bufsiz, struct cgpu_info *modminer)
 {
-	tailsprintf(buf, bufsiz, " %s%.1fC %3uMHz  | ",
+	tailsprintf(buf, bufsiz, "%s%.1fC %3uMHz",
 			(modminer->temp < 10) ? " " : "",
 			modminer->temp,
 			(unsigned int)(modminer->clock));
@@ -1029,7 +1026,7 @@ tryagain:
 	if (hashes > 0xffffffff)
 		hashes = 0xffffffff;
 
-	work->blk.nonce = 0xffffffff;
+	work->nonce = 0xffffffff;
 
 	return hashes;
 }

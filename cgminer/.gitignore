@@ -1,18 +1,46 @@
-# Object files
+cgminer
+cgminer.exe
+minerd
+minerd.exe
 *.o
-*.ko
+*.bin
 
-# Libraries
-*.lib
-*.a
+autom4te.cache
+.deps
 
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
+Makefile
+Makefile.in
+INSTALL
+aclocal.m4
+configure
+depcomp
+missing
+install-sh
+stamp-h1
+cpuminer-config.h*
+compile
+config.log
+config.status
+config.guess
+config.sub
 
-# Executables
-*.exe
-*.out
-*.app
+mingw32-config.cache
+
+*~
+
+ext_deps
+config.h.in
+config.h
+
+ccan/libccan.a
+lib/arg-nonnull.h
+lib/c++defs.h
+lib/libgnu.a
+lib/signal.h
+lib/string.h
+lib/stdint.h
+lib/warn-on-use.h
+
+mkinstalldirs
+
+*.swp

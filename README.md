@@ -15,18 +15,25 @@ First, choose a name for the bash script to be saved as, no spaces allowed.
 
 	  Save As:
 	  Exampe
+Second, select algo
 
-Second, Insert chosen scrypt pool url.
+	  Pool Algo:
+	  sha256
+	  or
+	  scrypt
+	  scrypt
+
+Third, Insert chosen scrypt pool url.
 
 	  Pool URL:
 	  stratum+tcp://us2.litecoinpool.org:3333
 
-Third, Insert worker name for selected pool.
+Fourth, Insert worker name for selected pool.
 
 	  Pool Worker:
 	  Meap10.Test
 
-Forth, Insert worker password.
+Fifth, Insert worker password.
 
 	  Worker Password:
 	  x
@@ -40,12 +47,12 @@ Sixth, Select the Frequency. 850 is recommended for a hashrate of 350 khs
 
 Once that's done, run the script just made with a ./ infront of the name.
 
-	$ ./Example  
+	$ ./Example
 
 If all is done well, you should see something like this.
 
 
-	    cgminer version 3.7.2 - Started: [2021-11-16 22:18:40]
+	   cgminer version 4.3.5 - Started: [2021-11-19 11:53:54]
 	  --------------------------------------------------------------------------------
 	   (5s):360.1K (avg):360.0Kh/s | A:768  R:0  HW:0  WU:1.1/m
 	   ST: 2  SS: 0  NB: 2  LW: 31  GF: 0  RF: 0
@@ -56,7 +63,7 @@ If all is done well, you should see something like this.
 	   GSD 0: 6D9214984857  850 MHz | 360.0K/366.5Kh/s | A:768 R:0 HW:0 WU:1.1/m
 	  --------------------------------------------------------------------------------
 
-	   [2021-11-16 22:18:35] Started cgminer 3.7.2
+	   [2021-11-16 22:18:35] Started cgminer 4.3.5
 	   [2021-11-16 22:18:36] GridSeed options: 'baud=115200,freq=850,chips=5,usefifo=0,btc=16'
 	   [2021-11-16 22:18:36] Device found, firmware version 01140113, driver version v3.8.5.20140210.02
 	   [2021-11-16 22:18:36] System reseting

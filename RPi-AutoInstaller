@@ -11,7 +11,8 @@ echo "Configuring And Installing cgminer"
 echo \
 
 cd cgminer
-sudo ./configure CFLAGS="-O3" --enable-scrypt --enable-gridseed
+sudo ./autogen.sh
+sudo ./configure --enable-sha256 --enable-scrypt --enable-gridseed
 sudo make
 
 echo \
