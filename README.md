@@ -38,7 +38,7 @@ Fifth, Insert worker password.
 	  Worker Password:
 	  x
 
-Sixth, Select the Frequency. 850 is recommended for a hashrate of 350 khs
+Fifth, Select the Frequency. 850 is recommended for a hashrate of 350 khs
 
 	  Orb Frequency:
 	  Can be 600, 625, 650, 675, 700, 725, 750, 775, 800, 825, 850, 875, 900
@@ -56,7 +56,7 @@ If all is done well, you should see something like this.
 	  --------------------------------------------------------------------------------
 	   (5s):360.1K (avg):360.0Kh/s | A:768  R:0  HW:0  WU:1.1/m
 	   ST: 2  SS: 0  NB: 2  LW: 31  GF: 0  RF: 0
-	   Connected to us2.litecoinpool.org diff 256 with stratum as user Meap10.Gridseed
+	   Connected to us2.litecoinpool.org diff 256 with stratum as user Meap10.Test
 	   Block: a552a120...  Diff:11.7M  Started: [22:18:51]  Best share: 351
 	  --------------------------------------------------------------------------------
 	   [P]ool management [S]ettings [D]isplay options [Q]uit
