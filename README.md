@@ -8,7 +8,7 @@ Usage:
 
 First run the AutoInstaller to compile and install cgminer.
 
-	$ ./RPi-AutoInstaller
+	$ ./AutoInstaller
 
 Wait for the AutoInstaller to finish and then use the Worker Generator to make executable bash file for running miner.
 
