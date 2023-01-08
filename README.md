@@ -1,4 +1,7 @@
 # GC3355-cgminer
+
+# Currently only works up to Raspberry Pi Buster OS
+
 cgminer for Gridseed devices
 
 Usage:
