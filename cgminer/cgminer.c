@@ -2270,7 +2270,7 @@ static unsigned char scriptsig_header_bin[41];
 
 static bool gbt_solo_decode(struct pool *pool, json_t *res_val)
 {
-	json_t *transaction_arr, *coinbase_aux;
+	json_t *transaction_arr, *rules_arr, *coinbase_aux;
 	const char *previousblockhash;
 	unsigned char hash_swap[32];
 	struct timeval now;
@@ -2278,17 +2278,23 @@ static bool gbt_solo_decode(struct pool *pool, json_t *res_val)
 	uint64_t coinbasevalue;
 	const char *flags;
 	const char *bits;
-	char header[228];
+	char header[260];
 	int ofs = 0, len;
 	uint64_t *u64;
 	uint32_t *u32;
 	int version;
 	int curtime;
 	int height;
+	int witness_txout_len = 0;
+	int witnessdata_size = 0;
+	bool insert_witness = false;
+	unsigned char witnessdata[36] = {};
+	const char *default_witness_commitment;
 
 	previousblockhash = json_string_value(json_object_get(res_val, "previousblockhash"));
 	target = json_string_value(json_object_get(res_val, "target"));
 	transaction_arr = json_object_get(res_val, "transactions");
+	rules_arr = json_object_get(res_val, "rules");
 	version = json_integer_value(json_object_get(res_val, "version"));
 	curtime = json_integer_value(json_object_get(res_val, "curtime"));
 	bits = json_string_value(json_object_get(res_val, "bits"));
@@ -2296,11 +2302,31 @@ static bool gbt_solo_decode(struct pool *pool, json_t *res_val)
 	coinbasevalue = json_integer_value(json_object_get(res_val, "coinbasevalue"));
 	coinbase_aux = json_object_get(res_val, "coinbaseaux");
 	flags = json_string_value(json_object_get(coinbase_aux, "flags"));
+	default_witness_commitment = json_string_value(json_object_get(res_val, "default_witness_commitment"));
 
 	if (!previousblockhash || !target || !version || !curtime || !bits || !coinbase_aux || !flags) {
 		applog(LOG_ERR, "Pool %d JSON failed to decode GBT", pool->pool_no);
 		return false;
 	}
+
+	if (rules_arr) {
+		int i;
+		int rule_count = json_array_size(rules_arr);
+		const char *rule;
+
+		for (i = 0; i < rule_count; i++) {
+			rule = json_string_value(json_array_get(rules_arr, i));
+			if (!rule)
+				continue;
+			if (*rule == '!')
+				rule++;
+			if (strncmp(rule, "segwit", 6)) {
+				insert_witness = true;
+				break;
+			}
+		}
+	}
+
 
 	applog(LOG_DEBUG, "previousblockhash: %s", previousblockhash);
 	applog(LOG_DEBUG, "target: %s", target);
@@ -2327,6 +2353,27 @@ static bool gbt_solo_decode(struct pool *pool, json_t *res_val)
 	pool->nValue = coinbasevalue;
 	hex2bin((unsigned char *)&pool->gbt_bits, bits, 4);
 	gbt_merkle_bins(pool, transaction_arr);
+
+	if (insert_witness) {
+		char witness_str[sizeof(witnessdata) * 2];
+
+		witnessdata_size = sizeof(witnessdata);
+		if (!gbt_witness_data(transaction_arr, witnessdata, witnessdata_size)) {
+			applog(LOG_ERR, "error calculating witness data");
+			return false;
+		}
+		__bin2hex(witness_str, witnessdata, witnessdata_size);
+		applog(LOG_DEBUG, "calculated witness data: %s", witness_str);
+		if (default_witness_commitment) {
+			if (strncmp(witness_str, default_witness_commitment + 4, witnessdata_size * 2) != 0) {
+				applog(LOG_ERR, "bad witness data. %s != %s", default_witness_commitment + 4, witness_str);
+				return false;
+			}
+		}
+	}
+
+	if (pool->transactions < 3)
+		pool->bad_work++;
 	pool->height = height;
 
 	memset(pool->scriptsig_base, 0, 42);
@@ -2352,7 +2399,7 @@ static bool gbt_solo_decode(struct pool *pool, json_t *res_val)
 	*u32 = htole32(now.tv_usec);
 	ofs += 4; // sizeof uint32_t
 
-	memcpy(pool->scriptsig_base + ofs, "\x09\x63\x67\x6d\x69\x6e\x65\x72\x34\x32", 10);
+	cg_memcpy(pool->scriptsig_base + ofs, "\x09\x63\x67\x6d\x69\x6e\x65\x72\x34\x32", 10);
 	ofs += 10;
 
 	/* Followed by extranonce size, fixed at 8 */
@@ -2365,7 +2412,7 @@ static bool gbt_solo_decode(struct pool *pool, json_t *res_val)
 		if (len > 32)
 			len = 32;
 		pool->scriptsig_base[ofs++] = len;
-		memcpy(pool->scriptsig_base + ofs, opt_btc_sig, len);
+		cg_memcpy(pool->scriptsig_base + ofs, opt_btc_sig, len);
 		ofs += len;
 	}
 
@@ -2375,27 +2422,42 @@ static bool gbt_solo_decode(struct pool *pool, json_t *res_val)
 	len = 	41 // prefix
 		+ ofs // Template length
 		+ 4 // txin sequence no
-		+ 1 // transactions
+		+ 1 // txouts
 		+ 8 // value
 		+ 1 + 25 // txout
 		+ 4; // lock
-	free(pool->coinbase);
-	pool->coinbase = calloc(len, 1);
-	if (unlikely(!pool->coinbase))
-		quit(1, "Failed to calloc coinbase in gbt_solo_decode");
 
-	memcpy(pool->coinbase + 41, pool->scriptsig_base, ofs);
-	memcpy(pool->coinbase + 41 + ofs, "\xff\xff\xff\xff", 4);
-	pool->coinbase[41 + ofs + 4] = 1;
+	if (insert_witness) {
+		len +=  8 //value
+			+   1 + 2 + witnessdata_size; // total scriptPubKey size + OP_RETURN + push size + data
+	}
+
+	free(pool->coinbase);
+	pool->coinbase = cgcalloc(len, 1);
+	cg_memcpy(pool->coinbase + 41, pool->scriptsig_base, ofs);
+	cg_memcpy(pool->coinbase + 41 + ofs, "\xff\xff\xff\xff", 4);
+	pool->coinbase[41 + ofs + 4] = insert_witness ? 2 : 1;
 	u64 = (uint64_t *)&(pool->coinbase[41 + ofs + 4 + 1]);
 	*u64 = htole64(coinbasevalue);
 
+	if (insert_witness) {
+		unsigned char *witness = &pool->coinbase[41 + ofs + 4 + 1 + 8 + 1 + 25];
+
+		memset(witness, 0, 8);
+		witness_txout_len += 8;
+		witness[witness_txout_len++] = witnessdata_size + 2; // total scriptPubKey size
+		witness[witness_txout_len++] = 0x6a; // OP_RETURN
+		witness[witness_txout_len++] = witnessdata_size;
+		memcpy(&witness[witness_txout_len], witnessdata, witnessdata_size);
+		witness_txout_len += witnessdata_size;
+	}
+
 	pool->nonce2 = 0;
 	pool->n2size = 4;
-	pool->coinbase_len = 41 + ofs + 4 + 1 + 8 + 1 + 25 + 4;
+	pool->coinbase_len = 41 + ofs + 4 + 1 + 8 + 1 + 25 + witness_txout_len + 4;
 	cg_wunlock(&pool->gbt_lock);
 
-	snprintf(header, 225, "%s%s%s%s%s%s%s",
+	snprintf(header, 257, "%s%s%s%s%s%s%s",
 		 pool->bbversion,
 		 pool->prev_hash,
 		 "0000000000000000000000000000000000000000000000000000000000000000",
@@ -2403,11 +2465,12 @@ static bool gbt_solo_decode(struct pool *pool, json_t *res_val)
 		 pool->nbit,
 		 "00000000", /* nonce */
 		 workpadding);
-	if (unlikely(!hex2bin(pool->header_bin, header, 112)))
+	if (unlikely(!hex2bin(pool->header_bin, header, 128)))
 		quit(1, "Failed to hex2bin header in gbt_solo_decode");
 
 	return true;
 }
+
 
 static bool work_decode(struct pool *pool, struct work *work, json_t *val)
 {
