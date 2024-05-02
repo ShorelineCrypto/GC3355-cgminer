@@ -2183,7 +2183,7 @@ static void gbt_merkle_bins(struct pool *pool, json_t *transaction_arr)
 	memset(hashbin, 0, 32);
 	binleft = binlen / 32;
 	if (pool->transactions) {
-		int len = 1, ofs = 0;
+		int len = 0, ofs = 0;
 		const char *txn;
 
 		for (i = 0; i < pool->transactions; i++) {
@@ -2197,37 +2197,46 @@ static void gbt_merkle_bins(struct pool *pool, json_t *transaction_arr)
 			len += strlen(txn);
 		}
 
-		pool->txn_data = malloc(len + 1);
-		if (unlikely(!pool->txn_data))
-			quit(1, "Failed to calloc txn_data in gbt_merkle_bins");
+		pool->txn_data = cgmalloc(len + 1);
 		pool->txn_data[len] = '\0';
 
 		for (i = 0; i < pool->transactions; i++) {
 			unsigned char binswap[32];
 			const char *hash;
+			const char *txid;
 
 			arr_val = json_array_get(transaction_arr, i);
+			txid = json_string_value(json_object_get(arr_val, "txid"));
 			hash = json_string_value(json_object_get(arr_val, "hash"));
+			if(!txid)
+				txid = hash;
 			txn = json_string_value(json_object_get(arr_val, "data"));
 			len = strlen(txn);
-			memcpy(pool->txn_data + ofs, txn, len);
+			cg_memcpy(pool->txn_data + ofs, txn, len);
 			ofs += len;
+#if 0
+			// This logic no longer works post-segwit. The txids will always need to be sent,
+			// as the full txns will also contain witness data that must be omitted in these
+			// hashes.
 			if (!hash) {
 				unsigned char *txn_bin;
 				int txn_len;
 
 				txn_len = len / 2;
-				txn_bin = malloc(txn_len);
-				if (!txn_bin)
-					quit(1, "Failed to malloc txn_bin in gbt_merkle_bins");
+				txn_bin = cgmalloc(txn_len);
 				hex2bin(txn_bin, txn, txn_len);
 				/* This is needed for pooled mining since only
 				 * transaction data and not hashes are sent */
 				gen_hash(txn_bin, hashbin + 32 + 32 * i, txn_len);
 				continue;
 			}
-			if (!hex2bin(binswap, hash, 32)) {
-				applog(LOG_ERR, "Failed to hex2bin hash in gbt_merkle_bins");
+#endif
+			if (!txid) {
+				applog(LOG_ERR, "missing txid in gbt_merkle_bins");
+				return;
+			}
+			if (!hex2bin(binswap, txid, 32)) {
+				applog(LOG_ERR, "Failed to hex2bin txid in gbt_merkle_bins");
 				return;
 			}
 			swab256(hashbin + 32 + 32 * i, binswap);
@@ -2237,10 +2246,10 @@ static void gbt_merkle_bins(struct pool *pool, json_t *transaction_arr)
 		while (42) {
 			if (binleft == 1)
 				break;
-			memcpy(pool->merklebin + (pool->merkles * 32), hashbin + 32, 32);
+			cg_memcpy(pool->merklebin + (pool->merkles * 32), hashbin + 32, 32);
 			pool->merkles++;
 			if (binleft % 2) {
-				memcpy(hashbin + binlen, hashbin + binlen - 32, 32);
+				cg_memcpy(hashbin + binlen, hashbin + binlen - 32, 32);
 				binlen += 32;
 				binleft++;
 			}
@@ -2262,6 +2271,61 @@ static void gbt_merkle_bins(struct pool *pool, json_t *transaction_arr)
 	applog(LOG_INFO, "Stored %d transactions from pool %d", pool->transactions,
 		pool->pool_no);
 }
+
+static const unsigned char witness_nonce[32] = {0};
+static const int witness_nonce_size = sizeof(witness_nonce);
+static const unsigned char witness_header[] = {0xaa, 0x21, 0xa9, 0xed};
+static const int witness_header_size = sizeof(witness_header);
+
+static bool gbt_witness_data(json_t *transaction_arr, unsigned char* witnessdata, int avail_size)
+{
+	int i, binlen, txncount = json_array_size(transaction_arr);
+	unsigned char *hashbin;
+	const char *hash;
+	json_t *arr_val;
+
+	binlen = txncount * 32 + 32;
+	hashbin = alloca(binlen + 32);
+	memset(hashbin, 0, 32);
+
+	if (avail_size < witness_header_size + 32)
+		return false;
+
+	for (i = 0; i < txncount; i++) {
+		unsigned char binswap[32];
+
+		arr_val = json_array_get(transaction_arr, i);
+		hash = json_string_value(json_object_get(arr_val, "hash"));
+		if (unlikely(!hash)) {
+			applog(LOG_ERR, "Hash missing for transaction");
+			return false;
+		}
+		if (!hex2bin(binswap, hash, 32)) {
+			applog(LOG_ERR, "Failed to hex2bin hash in gbt_witness_data");
+			return false;
+		}
+		swab256(hashbin + 32 + 32 * i, binswap);
+	}
+
+	// Build merkle root (copied from libblkmaker)
+	for (txncount++ ; txncount > 1 ; txncount /= 2) {
+		if (txncount % 2) {
+			// Odd number, duplicate the last
+			memcpy(hashbin + 32 * txncount, hashbin + 32 * (txncount - 1), 32);
+			txncount++;
+		}
+		for (i = 0; i < txncount; i += 2) {
+			// We overlap input and output here, on the first pair
+			gen_hash(hashbin + 32 * i, hashbin + 32 * (i / 2), 64);
+		}
+	}
+
+	memcpy(witnessdata, witness_header, witness_header_size);
+	memcpy(hashbin + 32, &witness_nonce, witness_nonce_size);
+	gen_hash(hashbin, witnessdata + witness_header_size, 32 + witness_nonce_size);
+	return true;
+}
+
 
 static double diff_from_target(void *target);
 
